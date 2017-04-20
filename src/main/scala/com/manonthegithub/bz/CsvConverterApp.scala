@@ -5,115 +5,119 @@ import java.time.{LocalDateTime, ZoneOffset}
 import java.time.format.DateTimeFormatter
 
 import akka.actor.ActorSystem
-import akka.stream.{ActorMaterializer, SourceShape}
-import akka.stream.scaladsl.{Broadcast, FileIO, Flow, Framing, GraphDSL, Source}
+import akka.stream._
+import akka.stream.scaladsl.{FileIO, Flow, Framing}
+import akka.stream.stage.{GraphStage, GraphStageLogic, InHandler, OutHandler}
 import akka.util.ByteString
+import com.manonthegithub.bz.CsvConverterApp.UserAuthEvent
 
-import scala.collection.mutable
+import scala.collection.immutable
 import scala.concurrent.duration._
 
 object CsvConverterApp extends App {
+
 
   implicit val system = ActorSystem("csv-converter")
   implicit val mat = ActorMaterializer()
   implicit val ec = system.dispatcher
 
-  val FilePath = Paths.get("C:\\Users\\yankov.kirill\\Desktop\\logins0.csv")
-  val CsvSeparator: Char = ','
-  val StringSeparator: ByteString = ByteString("\n")
+  val FilePath = Paths.get("/Users/Kirill/Desktop/logins0.csv")
+  val CsvSeparator = ','
+  val StringSeparator = ByteString("\n")
   val DateFormatString = "yyyy-MM-dd HH:mm:ss"
 
-  val countdownStart = LocalDateTime.parse("2015-11-30T23:10:40")
 
-  val tuplesSource = FileIO.fromPath(FilePath)
+  val TuplesSource = FileIO.fromPath(FilePath)
     .via(Framing.delimiter(StringSeparator, 1000, false))
-    .map(_.utf8String.replace("\"", "").split(CsvSeparator))
-    .filter(_.size == 3)
-    .map(a => (a(0), a(1), LocalDateTime.parse(a(2), DateTimeFormatter.ofPattern(DateFormatString))))
+    .map(_.utf8String
+      .replace("\"", "")
+      .split(CsvSeparator))
+    .filter(_.length == 3)
+    .map(a => UserAuthEvent(a(0), a(1), LocalDateTime.parse(a(2), DateTimeFormatter.ofPattern(DateFormatString))))
+    .log("Event")
+    .via(Flow.fromGraph(new EventPeriodFlow(10 minutes)))
+    .mapConcat(s => s
+      .groupBy(_.ip)
+      .filter(_._2.size > 1)
+    ).map(e => s"${e._1} ${e._2}")
+    .runForeach(println).onComplete {
+    _ => system.terminate()
+  }
 
-  val periodsFlow = Flow[LocalDateTime].prepend(Source.single(countdownStart))
-
-  val temp = periodsFlow
-    .zip(tuplesSource)
-    .map(tpl => (tpl._1, UserAuthAggregator.startOfPeriod(tpl._2._3, 10 minutes), tpl._2))
-
-
-  //  import GraphDSL.Implicits._
-  //  GraphDSL.create(temp){ implicit b => periods =>
-  //
-  //    val br = b.add(Broadcast[](2))
-  //
-  //
-  //
-  //
-  //
-  //    SourceShape()
-  //  }
-
+  case class UserAuthEvent(username: String, ip: String, date: LocalDateTime)
 
 }
 
-object UserAuthAggregator {
+
+class EventPeriodFlow(period: FiniteDuration) extends GraphStage[FlowShape[UserAuthEvent, immutable.Seq[UserAuthEvent]]] with DateUtils {
+
+  val in = Inlet[UserAuthEvent]("EventPeriodFlow.in")
+  val out = Outlet[immutable.Seq[UserAuthEvent]]("EventPeriodFlow.out")
+
+  def createLogic(inheritedAttributes: Attributes): GraphStageLogic = new GraphStageLogic(shape) with InHandler with OutHandler {
+
+    var prevPeriod: Option[LocalDateTime] = None
+    var eventsInPeriod = immutable.Seq.empty[UserAuthEvent]
+
+    override def onPush(): Unit = {
+      val event = grab(in)
+      val eventPeriod = startOfPeriod(event.date, period)
+      val isNewPeriod = prevPeriod
+        .map(!_.isEqual(eventPeriod))
+        .getOrElse(false)
+      if (isNewPeriod) {
+        prevPeriod = Some(eventPeriod)
+        push(out, eventsInPeriod)
+        eventsInPeriod = immutable.Seq.empty[UserAuthEvent]
+      } else {
+        if (prevPeriod.isEmpty) prevPeriod = Some(eventPeriod)
+        eventsInPeriod :+= event
+        pull(in)
+      }
+    }
+
+    override def onPull(): Unit = {
+      pull(in)
+    }
+
+    setHandler(in, this)
+    setHandler(out, this)
+  }
+
+  override def shape: FlowShape[UserAuthEvent, immutable.Seq[UserAuthEvent]] = FlowShape(in, out)
+}
+
+
+trait DateUtils {
 
   val DefaultZone = ZoneOffset.UTC
+  val DefaultCountdownDate = LocalDateTime.ofEpochSecond(0, 0, DefaultZone)
+
 
   def startOfPeriod(date: LocalDateTime,
                     period: Duration,
-                    zoneOffset: ZoneOffset = UserAuthAggregator.DefaultZone,
-                    countdownPoint: LocalDateTime = LocalDateTime.ofEpochSecond(0, 0, UserAuthAggregator.DefaultZone)
+                    zoneOffset: ZoneOffset = DefaultZone,
+                    countdownPoint: LocalDateTime = DefaultCountdownDate
                    ): LocalDateTime = {
+
     val startSecond = countdownPoint.toEpochSecond(zoneOffset)
     val periodSeconds = period.toSeconds
-    val firstIncomingSeconds = date.toEpochSecond(zoneOffset)
-    if (date.isAfter(countdownPoint)) {
-      val startDiffSeconds = ((firstIncomingSeconds - startSecond) / periodSeconds) * periodSeconds
-      LocalDateTime.ofEpochSecond(startSecond + startDiffSeconds, 0, zoneOffset)
+    val dateSecond = date.toEpochSecond(zoneOffset)
+
+    val startPeriodSecond = if (date.isAfter(countdownPoint)) {
+      val startDiffSeconds = ((dateSecond - startSecond) / periodSeconds) * periodSeconds
+      startSecond + startDiffSeconds
     } else {
-      val startDiffSeconds = ((startSecond - firstIncomingSeconds) / periodSeconds + 1) * periodSeconds
-      LocalDateTime.ofEpochSecond(startSecond - startDiffSeconds, 0, zoneOffset)
+      val diff = startSecond - dateSecond
+      val diffPeriods = if (diff % periodSeconds == 0) {
+        diff / periodSeconds
+      } else {
+        diff / periodSeconds + 1
+      }
+      val startDiffSeconds = diffPeriods * periodSeconds
+      startSecond - startDiffSeconds
     }
-  }
-
-}
-
-class UserAuthAggregator(period: Duration,
-                         zoneOffset: ZoneOffset = UserAuthAggregator.DefaultZone,
-                         countdownPoint: LocalDateTime = LocalDateTime.ofEpochSecond(0, 0, UserAuthAggregator.DefaultZone)) {
-
-  val tracker = mutable.Map.empty[String, mutable.Seq[(String, LocalDateTime)]]
-  var start: LocalDateTime = _
-
-
-  def update(ip: String, username: String, date: LocalDateTime): Option[mutable.Map[String, mutable.Seq[(String, LocalDateTime)]]] = {
-
-    if (start == null) start = startOfPeriod(date)
-
-    if (start.plusSeconds(period.toSeconds).isAfter(date)) {
-      tracker.update(ip, tracker.getOrElse(ip, mutable.Seq.empty[(String, LocalDateTime)]) :+ (username, date))
-      None
-    } else {
-      start = startOfPeriod(date)
-      val multInPeriod = tracker.clone()
-      tracker.clear()
-      Some(multInPeriod)
-    }
-
-  }
-
-  private def startOfPeriod(date: LocalDateTime,
-                            zoneOffset: ZoneOffset = UserAuthAggregator.DefaultZone,
-                            countdownPoint: LocalDateTime = LocalDateTime.ofEpochSecond(0, 0, UserAuthAggregator.DefaultZone)
-                           ): LocalDateTime = {
-    val startSecond = countdownPoint.toEpochSecond(zoneOffset)
-    val periodSeconds = period.toSeconds
-    val firstIncomingSeconds = date.toEpochSecond(zoneOffset)
-    if (date.isAfter(countdownPoint)) {
-      val startDiffSeconds = ((firstIncomingSeconds - startSecond) / periodSeconds) * periodSeconds
-      LocalDateTime.ofEpochSecond(startSecond + startDiffSeconds, 0, zoneOffset)
-    } else {
-      val startDiffSeconds = ((startSecond - firstIncomingSeconds) / periodSeconds) * periodSeconds
-      LocalDateTime.ofEpochSecond(firstIncomingSeconds + startDiffSeconds, 0, zoneOffset)
-    }
+    LocalDateTime.ofEpochSecond(startPeriodSecond, 0, zoneOffset)
   }
 
 }

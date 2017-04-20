@@ -11,25 +11,26 @@ import scala.concurrent.duration._
 
 class ConverterSpec extends Matchers with WordSpecLike {
 
-  "UserAuthAggregator" should {
+  "DateUtils" should {
 
-    "count start of period" in {
+    "count right start of period" in new DateUtils {
 
       val period = 2 minutes
 
       val dates = Seq(
-        LocalDateTime.ofEpochSecond(0, 0, UserAuthAggregator.DefaultZone),
-        LocalDateTime.ofEpochSecond(1, 0, UserAuthAggregator.DefaultZone),
-        LocalDateTime.ofEpochSecond(599, 0, UserAuthAggregator.DefaultZone),
-        LocalDateTime.ofEpochSecond(600, 0, UserAuthAggregator.DefaultZone),
-        LocalDateTime.ofEpochSecond(1199, 0, UserAuthAggregator.DefaultZone),
-        LocalDateTime.ofEpochSecond(1200, 0, UserAuthAggregator.DefaultZone)
+        (0, 0),
+        (1, 0),
+        (599, 480),
+        (600, 600),
+        (1199, 1080),
+        (1200, 1200)
       )
 
-
-      dates.foreach(d =>
-        println((UserAuthAggregator.startOfPeriod(d, period, countdownPoint = LocalDateTime.ofEpochSecond(1200, 0, UserAuthAggregator.DefaultZone))))
-      )
+      dates.foreach(d => {
+        val date = LocalDateTime.ofEpochSecond(d._1, 0, DefaultZone)
+        startOfPeriod(date, period, countdownPoint = LocalDateTime.ofEpochSecond(600, 0, DefaultZone))
+          .toEpochSecond(DefaultZone) should be(d._2)
+      })
 
     }
 
