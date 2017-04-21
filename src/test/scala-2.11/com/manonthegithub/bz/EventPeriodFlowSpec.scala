@@ -8,7 +8,6 @@ import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.{Flow, Source}
 import akka.stream.testkit.scaladsl.TestSink
 import akka.testkit.TestKit
-import com.manonthegithub.bz.CsvConverterApp.UserAuthEvent
 import org.scalatest.{Matchers, WordSpecLike}
 
 import scala.concurrent.duration._

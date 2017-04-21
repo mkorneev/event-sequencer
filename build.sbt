@@ -24,4 +24,4 @@ assemblyMergeStrategy in assembly := {
     oldStrategy(x)
 }
 
-mainClass in assembly := Some("com.manonthegithub.bz.CsvConverterApp")
+mainClass in assembly := Some("com.manonthegithub.bz.CsvAggregatorApp")

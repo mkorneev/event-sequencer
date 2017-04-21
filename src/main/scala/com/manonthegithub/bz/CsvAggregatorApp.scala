@@ -9,13 +9,12 @@ import akka.stream._
 import akka.stream.scaladsl.{FileIO, Flow, Framing}
 import akka.stream.stage.{GraphStage, GraphStageLogic, InHandler, OutHandler}
 import akka.util.ByteString
-import com.manonthegithub.bz.CsvConverterApp.UserAuthEvent
 
 import scala.collection.immutable
 import scala.concurrent.duration._
 import scala.util.Try
 
-object CsvConverterApp extends App {
+object CsvAggregatorApp extends App {
 
   implicit val system = ActorSystem("csv-converter")
   implicit val mat = ActorMaterializer()
@@ -88,9 +87,10 @@ object CsvConverterApp extends App {
     sb.toString
   }
 
-  case class UserAuthEvent(username: String, ip: String, date: LocalDateTime)
-
 }
+
+
+case class UserAuthEvent(username: String, ip: String, date: LocalDateTime)
 
 /**
  * Flow aggregates events by time periods and sends downstream batch of events that correspond to single period.
