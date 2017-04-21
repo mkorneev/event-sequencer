@@ -6,7 +6,7 @@ import org.scalatest.{Matchers, WordSpecLike}
 
 import scala.concurrent.duration._
 
-class ConverterSpec extends Matchers with WordSpecLike {
+class DateUtilsSpec extends Matchers with WordSpecLike {
 
   "DateUtils" should {
 

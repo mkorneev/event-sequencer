@@ -123,7 +123,7 @@ class EventPeriodFlow(period: FiniteDuration, countdownStart: Option[LocalDateTi
       if (isNewPeriod) {
         prevPeriod = Some(eventPeriod)
         push(out, eventsInPeriod)
-        eventsInPeriod = immutable.Seq.empty[UserAuthEvent]
+        eventsInPeriod = immutable.Seq(event)
       } else {
         if (prevPeriod.isEmpty) prevPeriod = Some(eventPeriod)
         eventsInPeriod :+= event
@@ -135,6 +135,12 @@ class EventPeriodFlow(period: FiniteDuration, countdownStart: Option[LocalDateTi
       pull(in)
     }
 
+    override def onUpstreamFinish(): Unit = {
+      if (isAvailable(out)) push(out, eventsInPeriod)
+      eventsInPeriod = null
+      completeStage()
+    }
+    
     setHandler(in, this)
     setHandler(out, this)
   }
