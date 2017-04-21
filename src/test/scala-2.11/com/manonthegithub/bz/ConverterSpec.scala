@@ -1,6 +1,3 @@
-/*
- * Copyright 2017 Infotecs. All rights reserved.
- */
 package com.manonthegithub.bz
 
 import java.time.LocalDateTime
