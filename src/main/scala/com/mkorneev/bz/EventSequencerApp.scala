@@ -85,10 +85,12 @@ object EventSequencerApp {
   }
 
   def buildEventFlow(period: Int): Flow[ByteString, ByteString, NotUsed] = {
+    val workerCount = 8
+
     Flow[ByteString]
       .via(CsvParsing.lineScanner())
       .via(Checkpoint("read"))
-
+      .groupBy(workerCount, l => Math.abs(l(1).hashCode()) % workerCount)
       .map(_.map(_.utf8String))
       .map(s => UserAuthEvent(s(0), s(1), LocalDateTime.parse(s(2), dateTimeFormatter)))
       .via(Flow.fromGraph(new EventSequencerFlow(Duration.ofSeconds(period))))
@@ -97,6 +99,8 @@ object EventSequencerApp {
       .map(Function.tupled(toList))
       .via(CsvFormatting.format(quotingStyle = CsvQuotingStyle.Always))
       .via(Checkpoint("ready"))
+      .async
+      .mergeSubstreams
   }
 
   def toList(ip: String, events: EventsSeq[String]): List[String] = {
