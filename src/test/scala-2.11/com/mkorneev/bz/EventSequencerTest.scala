@@ -6,7 +6,7 @@ import java.time.{Duration, LocalDateTime}
 import org.scalatest.{FunSuite, Matchers}
 
 
-class TimeSequencerTest extends FunSuite with Matchers {
+class EventSequencerTest extends FunSuite with Matchers {
 
   type IP = String
   type User = String

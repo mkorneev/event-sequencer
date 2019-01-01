@@ -4,7 +4,6 @@ import java.time.{Duration, LocalDateTime}
 
 import akka.stream.stage.{GraphStage, GraphStageLogic, InHandler, OutHandler}
 import akka.stream.{Attributes, FlowShape, Inlet, Outlet}
-import com.manonthegithub.bz.UserAuthEvent
 
 class EventSequencerFlow(window: Duration)
   extends GraphStage[FlowShape[UserAuthEvent, (String, EventsSeq[String])]] {
