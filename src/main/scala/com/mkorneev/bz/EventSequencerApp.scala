@@ -3,6 +3,7 @@ package com.mkorneev.bz
 import java.io.File
 import java.time.format.DateTimeFormatter
 import java.time.{Duration, LocalDateTime}
+import java.util.Comparator
 import java.util.concurrent.TimeUnit
 
 import akka.NotUsed
@@ -53,7 +54,12 @@ object EventSequencerApp {
 
     logger.info("Input file: {}, output file: {}, period: {} seconds",
       conf.inputFile(), conf.outputFile(), conf.period())
-    logger.info("Started computation, please wait")
+
+    logger.info("Sorting the input file")
+
+    val sortedFile: File = sortExternally(conf.inputFile())
+
+    logger.info("Starting the computation, please wait")
 
     val reporter = ConsoleReporter
       .forRegistry(metricRegistry)
@@ -61,7 +67,7 @@ object EventSequencerApp {
       .convertDurationsTo(TimeUnit.MILLISECONDS)
       .build
 
-    FileIO.fromPath(conf.inputFile().toPath)
+    FileIO.fromPath(sortedFile.toPath)
       .via(buildEventFlow(conf.period()))
       .runWith(FileIO.toPath(conf.outputFile().toPath))
       .onComplete {
@@ -85,6 +91,22 @@ object EventSequencerApp {
       }
   }
 
+  def sortExternally(inputFile: File): File = {
+    val tempFile = File.createTempFile("external_sort", "output")
+    tempFile.deleteOnExit()
+
+    // sort by the third field (separated by comma)
+    val thirdFieldComparator = new Comparator[String]() {
+      override def compare(s1: String, s2: String): Int = {
+        s1.split(',')(2).compareTo(s2.split(',')(2))
+      }
+    }
+
+    FixedExternalSort.sort(inputFile, tempFile, thirdFieldComparator)
+
+    tempFile
+  }
+
   def buildEventFlow(period: Int): Flow[ByteString, ByteString, NotUsed] = {
     val parser = new CSVParser(defaultCSVFormat)
     val workerCount = 6
@@ -94,6 +116,7 @@ object EventSequencerApp {
       .via(Checkpoint("read"))
       .grouped(1000)
       // CSV parsing takes the most time, let's do it in parallel
+      // Cannot use Alpakka [[CsvParsing.lineScanner]] here because it doesn't work line by line
       .mapAsync(workerCount)(bs => Future(bs.map(b => {
           val List(user, ip, date) = parser.parseLine(b.utf8String).get
           UserAuthEvent(user, ip, LocalDateTime.parse(date, dateTimeFormatter))

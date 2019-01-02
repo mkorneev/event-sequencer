@@ -20,6 +20,7 @@ libraryDependencies ++= Seq(
   "com.github.svezfaz" %% "akka-stream-checkpoint-core" % "0.0.3",
   "com.github.svezfaz" %% "akka-stream-checkpoint-dropwizard" % "0.0.3",
   "org.yaml" % "snakeyaml" % "1.8",
+  "com.google.code.externalsortinginjava" % "externalsortinginjava" % "0.2.5",
 
   //test scope
   "com.typesafe.akka" %% "akka-stream-testkit" % akkaVersion % "test",
