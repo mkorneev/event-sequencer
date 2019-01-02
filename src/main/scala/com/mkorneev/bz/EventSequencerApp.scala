@@ -8,16 +8,17 @@ import java.util.concurrent.TimeUnit
 import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.stream._
-import akka.stream.alpakka.csv.scaladsl.{CsvFormatting, CsvParsing, CsvQuotingStyle}
+import akka.stream.alpakka.csv.scaladsl.{CsvFormatting, CsvQuotingStyle}
 import akka.stream.checkpoint.DropwizardBackend._
 import akka.stream.checkpoint.scaladsl.Checkpoint
-import akka.stream.scaladsl.{FileIO, Flow}
+import akka.stream.scaladsl.{FileIO, Flow, Framing}
 import akka.util.ByteString
 import com.codahale.metrics.{ConsoleReporter, MetricRegistry}
+import com.github.tototoshi.csv.{CSVParser, defaultCSVFormat}
 import com.typesafe.scalalogging.Logger
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 
-import scala.concurrent.ExecutionContextExecutor
+import scala.concurrent.{ExecutionContextExecutor, Future}
 import scala.util.{Failure, Success}
 
 class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
@@ -85,22 +86,23 @@ object EventSequencerApp {
   }
 
   def buildEventFlow(period: Int): Flow[ByteString, ByteString, NotUsed] = {
-    val workerCount = 8
+    val parser = new CSVParser(defaultCSVFormat)
+    val workerCount = 6
 
     Flow[ByteString]
-      .via(CsvParsing.lineScanner())
+      .via(Framing.delimiter(delimiter = ByteString("\n"), maximumFrameLength = 1000, allowTruncation = false))
       .via(Checkpoint("read"))
-      .groupBy(workerCount, l => Math.abs(l(1).hashCode()) % workerCount)
-      .map(_.map(_.utf8String))
-      .map(s => UserAuthEvent(s(0), s(1), LocalDateTime.parse(s(2), dateTimeFormatter)))
+      .grouped(1000)
+      // CSV parsing takes the most time, let's do it in parallel
+      .mapAsync(workerCount)(bs => Future(bs.map(b => {
+          val List(user, ip, date) = parser.parseLine(b.utf8String).get
+          UserAuthEvent(user, ip, LocalDateTime.parse(date, dateTimeFormatter))
+        }).toList  // need toList here for better performance
+      ))
+      .mapConcat(list => list)
       .via(Flow.fromGraph(new EventSequencerFlow(Duration.ofSeconds(period))))
-      .via(Checkpoint("groupped"))
-
       .map(Function.tupled(toList))
       .via(CsvFormatting.format(quotingStyle = CsvQuotingStyle.Always))
-      .via(Checkpoint("ready"))
-      .async
-      .mergeSubstreams
   }
 
   def toList(ip: String, events: EventsSeq[String]): List[String] = {

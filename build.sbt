@@ -16,6 +16,7 @@ libraryDependencies ++= Seq(
   "ch.qos.logback" % "logback-classic" % "1.2.3",
   "com.typesafe.scala-logging" %% "scala-logging" % "3.9.0",
   "com.lightbend.akka" %% "akka-stream-alpakka-csv" % "0.18",
+  "com.github.tototoshi" %% "scala-csv" % "1.3.5",
   "com.github.svezfaz" %% "akka-stream-checkpoint-core" % "0.0.3",
   "com.github.svezfaz" %% "akka-stream-checkpoint-dropwizard" % "0.0.3",
   "org.yaml" % "snakeyaml" % "1.8",
