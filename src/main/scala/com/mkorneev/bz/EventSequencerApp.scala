@@ -1,6 +1,7 @@
 package com.mkorneev.bz
 
 import java.io.File
+import java.nio.file.Paths
 import java.time.format.DateTimeFormatter
 import java.time.{Duration, LocalDateTime}
 import java.util.Comparator
@@ -24,10 +25,10 @@ import scala.util.{Failure, Success}
 
 class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
   banner(
-    """Usage: EventSequencerApp <input-file> <output-file> [period]
+    """Usage: java -jar %s <input-file> <output-file> [period]
       |
       |Options:
-      |""".stripMargin)
+      |""".stripMargin.format(getRelativeJarPath))
 
   val inputFile: ScallopOption[File] = trailArg[File]()
   val outputFile: ScallopOption[File] = trailArg[File]()
@@ -37,6 +38,13 @@ class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
   validateFileExists(inputFile)
   validateFileDoesNotExist(outputFile)
   verify()
+
+  private def getRelativeJarPath = {
+    val codeSource = classOf[Conf].getProtectionDomain.getCodeSource
+    val jarPath = Paths.get(codeSource.getLocation.toURI)
+    Paths.get("").toAbsolutePath.relativize(jarPath)
+  }
+
 }
 
 object EventSequencerApp {
@@ -77,10 +85,15 @@ object EventSequencerApp {
           result match {
             case Success(s) => s.status match {
               case Success(_) =>
-                reporter.report()
+                logger.whenDebugEnabled({
+                  reporter.report()
+                })
 
-                logger.info("Operation successfully performed, written {} bytes. You can find results in {}",
-                  s.count, conf.outputFile())
+                logger.info("Operation successfully performed. Processed {} records, written {} sequences. " +
+                  "You can find the results in {}",
+                  metricRegistry.getMeters.get("read_throughput").getCount,
+                  metricRegistry.getMeters.get("write_throughput").getCount,
+                  conf.outputFile())
               case Failure(f) =>
                 logger.error("IO failure", f)
             }
@@ -95,14 +108,17 @@ object EventSequencerApp {
     val tempFile = File.createTempFile("external_sort", "output")
     tempFile.deleteOnExit()
 
-    // sort by the third field (separated by comma)
-    val thirdFieldComparator = new Comparator[String]() {
+    // sort by the last field (separated by comma)
+    // won't work for multi-line CSV entries
+    val lastFieldComparator = new Comparator[String]() {
       override def compare(s1: String, s2: String): Int = {
-        s1.split(',')(2).compareTo(s2.split(',')(2))
+        val f1 = s1.split(',').last
+        val f2 = s2.split(',').last
+        f1.compareTo(f2)
       }
     }
 
-    FixedExternalSort.sort(inputFile, tempFile, thirdFieldComparator)
+    FixedExternalSort.sort(inputFile, tempFile, lastFieldComparator)
 
     tempFile
   }
@@ -126,6 +142,7 @@ object EventSequencerApp {
       .via(Flow.fromGraph(new EventSequencerFlow(Duration.ofSeconds(period))))
       .map(Function.tupled(toList))
       .via(CsvFormatting.format(quotingStyle = CsvQuotingStyle.Always))
+      .via(Checkpoint("write"))
   }
 
   def toList(ip: String, events: EventsSeq[String]): List[String] = {

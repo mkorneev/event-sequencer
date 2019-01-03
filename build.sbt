@@ -5,8 +5,7 @@ version := "1.0"
 
 scalaVersion := "2.11.11"
 
-
-val akkaVersion = "2.5.0"
+val akkaVersion = "2.5.14"
 
 resolvers += "Spring Plugins Repository" at "http://repo.spring.io/plugins-release/"
 
