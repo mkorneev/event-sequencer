@@ -1,4 +1,4 @@
-package com.mkorneev.bz
+package com.mkorneev.event_sequencer
 
 import java.time.{Duration, LocalDateTime}
 
@@ -18,15 +18,15 @@ class EventSequencerFlow(window: Duration)
     override def onPush(): Unit = {
       val event = grab(in)
 
-      sequencer.add(event.date, event.ip, event.username)
+      sequencer.put(event.date, event.ip, event.username)
 
-      // Get only auth sequences of more than 1 element
-      val closedSequences = sequencer.takeClosedSequences(event.date).filter(_._2.values.size > 1)
+      // Filter out sequences of 1 element
+      val completedSequences = sequencer.removeCompletedSequences(event.date).filter(_._2.values.size > 1)
 
-      if (closedSequences.isEmpty) {
+      if (completedSequences.isEmpty) {
         pull(in)
       } else {
-        emitMultiple(out, closedSequences.toIterator)
+        emitMultiple(out, completedSequences.toIterator)
       }
     }
 
@@ -35,9 +35,9 @@ class EventSequencerFlow(window: Duration)
     }
 
     override def onUpstreamFinish(): Unit = {
-      val closedSequences = sequencer.takeClosedSequences(LocalDateTime.MAX).filter(_._2.values.size > 1)
+      val completedSequences = sequencer.removeCompletedSequences(LocalDateTime.MAX).filter(_._2.values.size > 1)
 
-      if (isAvailable(out)) emitMultiple(out, closedSequences.toIterator)
+      if (isAvailable(out)) emitMultiple(out, completedSequences.toIterator)
       completeStage()
     }
 

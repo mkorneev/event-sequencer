@@ -1,7 +1,6 @@
-package com.mkorneev.bz
+package com.mkorneev.event_sequencer
 
 import java.io.File
-import java.nio.file.Paths
 import java.time.format.DateTimeFormatter
 import java.time.{Duration, LocalDateTime}
 import java.util.Comparator
@@ -27,6 +26,7 @@ import org.slf4j.LoggerFactory
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import scala.util.{Failure, Success}
 
+
 class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
   banner(
     """Usage: java -jar path-to-jar <input-file> <output-file> [period]
@@ -44,8 +44,8 @@ class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
   validateFileExists(inputFile)
   validateFileDoesNotExist(outputFile)
   verify()
-
 }
+
 
 object EventSequencerApp {
   val logger = Logger("EventSequencerApp")
@@ -56,6 +56,12 @@ object EventSequencerApp {
   implicit val mat: ActorMaterializer = ActorMaterializer()
   implicit val ec: ExecutionContextExecutor = system.dispatcher
   implicit val metricRegistry: MetricRegistry = new MetricRegistry()
+
+  private val reporter = ConsoleReporter
+    .forRegistry(metricRegistry)
+    .convertRatesTo(TimeUnit.SECONDS)
+    .convertDurationsTo(TimeUnit.MILLISECONDS)
+    .build
 
   def main(args: Array[String]) {
     val conf = new Conf(args)
@@ -72,12 +78,6 @@ object EventSequencerApp {
     val sortedFile: File = sortExternally(conf.inputFile())
 
     logger.info("Starting the computation, please wait")
-
-    val reporter = ConsoleReporter
-      .forRegistry(metricRegistry)
-      .convertRatesTo(TimeUnit.SECONDS)
-      .convertDurationsTo(TimeUnit.MILLISECONDS)
-      .build
 
     FileIO.fromPath(sortedFile.toPath)
       .via(buildEventFlow(conf.period()))
@@ -135,21 +135,24 @@ object EventSequencerApp {
       .via(Framing.delimiter(delimiter = ByteString("\n"), maximumFrameLength = 1000, allowTruncation = false))
       .via(Checkpoint("read"))
       .grouped(1000)
+
       // CSV parsing takes the most time, let's do it in parallel
       // Cannot use Alpakka [[CsvParsing.lineScanner]] here because it doesn't work line by line
-      .mapAsync(workerCount)(bs => Future(bs.map(b => {
+      .mapAsync(workerCount)(byteStrings =>
+        Future(byteStrings.map(b => {
           val List(user, ip, date) = parser.parseLine(b.utf8String).get
           UserAuthEvent(user, ip, LocalDateTime.parse(date, dateTimeFormatter))
-        }).toList  // need toList here for better performance
+        }).toList  // need toList here for async parsing
       ))
       .mapConcat(list => list)
+
       .via(Flow.fromGraph(new EventSequencerFlow(Duration.ofSeconds(period))))
-      .map(Function.tupled(toList))
+      .map(Function.tupled(eventsToList))
       .via(CsvFormatting.format(quotingStyle = CsvQuotingStyle.Always))
       .via(Checkpoint("write"))
   }
 
-  def toList(ip: String, events: EventsSeq[String]): List[String] = {
+  def eventsToList(ip: String, events: EventsSeq[String]): List[String] = {
     List(ip, events.startTime.format(dateTimeFormatter), events.endTime.format(dateTimeFormatter),
       multiUserString(events))
   }

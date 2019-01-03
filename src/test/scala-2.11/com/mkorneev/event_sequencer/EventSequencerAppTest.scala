@@ -1,4 +1,4 @@
-package com.mkorneev.bz
+package com.mkorneev.event_sequencer
 
 import java.util
 

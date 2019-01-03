@@ -1,8 +1,8 @@
-# bz-parse-aggregate
+# event-sequencer (former bz-parse-aggregate)
 
 Akka-streams flow that collects sequences of multiple log-ins from a given IP in a specified time window.
 
-Log-in data is loaded from an input CSV file with columns of **username**, **ip**, **timestamp**.
+Log-in data is loaded from an input CSV file with columns of **username**, **ip**, **timestamp** (as "yyyy-MM-dd HH:mm:ss").
 
 The tool will first sort the input file by the **timestamp** column.
 
@@ -18,11 +18,11 @@ sbt clean assembly
 To run find assembled **jar** file in **{projectPath}/target/scala-2.11/**
 and run it as:
 ```
-java -jar bz-parse-aggregate-assembly-1.0.jar <input-file> <output-file> [period]
+java -jar event-sequencer-assembly-1.0.jar <input-file> <output-file> [period]
 ```
 For example:
 ```
-java -jar bz-parse-aggregate-assembly-1.0.jar /folder/in.csv /folder/out.csv 60
+java -jar event-sequencer-assembly-1.0.jar /folder/in.csv /folder/out.csv 60
 ```
 
 Example input data:
@@ -41,7 +41,7 @@ Example output:
 
 ### Caveats
 
-New line characters are NOT expected to be part of a username.
+New line characters are NOT expected to be a part of a username. External sorting and parallel CSV parsing will break if that's the case.
 
 The tool will work fine with any printable UTF-8 characters in the username, and even quotes if escaped with an additional quote.
 
@@ -49,6 +49,7 @@ The output will be difficult/impossible to parse correctly if usernames can cont
 
 ### Performance testing results
 
-Input file with 60M records (example file concatenated 200 times with an increment of the year, 2.8GB) \
-was sorted in 6 minutes and processed in another 4 minutes (260K records/s) with the output size of 914MB. \
-\[2GB of Java heap, 2.2 GHz Intel Core i7\]
+Input file with 60M records (example file concatenated 200 times with an increment of the year, 2.8GB)
+was sorted in 6 minutes and processed in another 4 minutes (260K records/s) with the output size of 914MB.
+
+Configuration: 2GB of Java heap, 2.2 GHz Intel Core i7

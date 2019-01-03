@@ -1,5 +1,5 @@
 
-name := "bz-parse-aggregate"
+name := "event-sequencer"
 
 version := "1.0"
 
@@ -35,4 +35,4 @@ assemblyMergeStrategy in assembly := {
     oldStrategy(x)
 }
 
-mainClass in assembly := Some("com.mkorneev.bz.EventSequencerApp")
+mainClass in assembly := Some("com.mkorneev.event_sequencer.EventSequencerApp")
