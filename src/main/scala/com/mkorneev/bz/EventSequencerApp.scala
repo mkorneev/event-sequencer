@@ -15,20 +15,26 @@ import akka.stream.checkpoint.DropwizardBackend._
 import akka.stream.checkpoint.scaladsl.Checkpoint
 import akka.stream.scaladsl.{FileIO, Flow, Framing}
 import akka.util.ByteString
+import ch.qos.logback.classic
+import ch.qos.logback.classic.Level
 import com.codahale.metrics.{ConsoleReporter, MetricRegistry}
 import com.github.tototoshi.csv.{CSVParser, defaultCSVFormat}
 import com.typesafe.scalalogging.Logger
 import org.rogach.scallop.{ScallopConf, ScallopOption}
+import org.slf4j
+import org.slf4j.LoggerFactory
 
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import scala.util.{Failure, Success}
 
 class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
   banner(
-    """Usage: java -jar %s <input-file> <output-file> [period]
+    """Usage: java -jar path-to-jar <input-file> <output-file> [period]
       |
       |Options:
-      |""".stripMargin.format(getRelativeJarPath))
+      |""".stripMargin)
+
+  val debug: ScallopOption[Boolean] = opt[Boolean](descr = "will show flow throughput and latency statistics")
 
   val inputFile: ScallopOption[File] = trailArg[File]()
   val outputFile: ScallopOption[File] = trailArg[File]()
@@ -38,12 +44,6 @@ class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
   validateFileExists(inputFile)
   validateFileDoesNotExist(outputFile)
   verify()
-
-  private def getRelativeJarPath = {
-    val codeSource = classOf[Conf].getProtectionDomain.getCodeSource
-    val jarPath = Paths.get(codeSource.getLocation.toURI)
-    Paths.get("").toAbsolutePath.relativize(jarPath)
-  }
 
 }
 
@@ -59,6 +59,10 @@ object EventSequencerApp {
 
   def main(args: Array[String]) {
     val conf = new Conf(args)
+
+    if (conf.debug.getOrElse(false)) {
+      LoggerFactory.getLogger(slf4j.Logger.ROOT_LOGGER_NAME).asInstanceOf[classic.Logger].setLevel(Level.DEBUG)
+    }
 
     logger.info("Input file: {}, output file: {}, period: {} seconds",
       conf.inputFile(), conf.outputFile(), conf.period())
